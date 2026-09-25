@@ -306,7 +306,7 @@ Resources:
 
   # -------------------------------------------------------- Storage ---------
   EvidenceBucket:
-    Type: S3::Bucket
+    Type: AWS::S3::Bucket
     Properties:
       BucketEncryption:
         ServerSideEncryptionConfiguration:
