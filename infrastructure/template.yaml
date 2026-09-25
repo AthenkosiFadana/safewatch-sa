@@ -404,6 +404,38 @@ Resources:
             Status: Enabled
             ExpirationInDays: 180
 
+  # ------------------------------------------------------ Frontend ---------
+  # Static website hosting for the built React app:
+  #   aws s3 sync frontend/dist s3://<FrontendBucket> --delete
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: index.html
+
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: PublicReadForStaticSite
+            Effect: Allow
+            Principal: '*'
+            Action: s3:GetObject
+            Resource: !Sub '${FrontendBucket.Arn}/*'
+
   # ------------------------------------------------------ Monitoring ---------
   ApiLogGroup:
     Type: AWS::Logs::LogGroup
@@ -434,3 +466,6 @@ Outputs:
     Value: !Ref AlertTopic
   EvidenceBucketName:
     Value: !Ref EvidenceBucket
+  FrontendWebsiteUrl:
+    Description: Static website URL for the built React frontend
+    Value: !GetAtt FrontendBucket.WebsiteURL

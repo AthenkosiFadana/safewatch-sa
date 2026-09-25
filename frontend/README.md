@@ -21,7 +21,7 @@ The dev server proxies `/api` to the Flask backend on `http://127.0.0.1:5001`
 (see `vite.config.js`). To point at a deployed API instead, create `.env.local`:
 
 ```
-VITE_API_URL=https://<api-id>.execute-api.eu-west-1.amazonaws.com/dev
+VITE_API_URL=https://<function-url>   # ApiMode=functionurl
 ```
 
 ## Build

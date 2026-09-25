@@ -112,21 +112,24 @@ ALERTS_TABLE=safewatch-dev-alerts
 
 Locally keep `STORAGE_BACKEND=sqlite`.
 
-## Frontend hosting (AWS Amplify)
+## Frontend hosting (S3 static website)
+
+The stack creates `FrontendBucket` — a public S3 static website with
+`index.html` as both the index and error document (SPA routing).
 
 ```bash
 cd frontend
 npm run build
-# Connect the repository in the Amplify Console, or:
-amplify init
-amplify add hosting
-amplify publish
+aws s3 sync dist s3://<FrontendBucket> --delete
 ```
 
-Point the frontend at the API:
+The bucket name is in the stack output `FrontendWebsiteUrl`, e.g.
+`http://safewatch-sa-frontendbucket-<id>.s3-website-<region>.amazonaws.com`.
+
+The production bundle reads `VITE_API_URL` at **build** time, so set it (or
+`frontend/.env.local`) before running `npm run build`:
 
 ```
-# frontend/.env.local
 VITE_API_URL=https://<function-url>            # ApiMode=functionurl
 VITE_API_URL=https://<api-id>.execute-api.<region>.amazonaws.com/dev   # ApiMode=apigateway
 ```

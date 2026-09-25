@@ -62,7 +62,7 @@ SafeWatch SA gives communities one place to:
                             ▼
                   ┌──────────────────┐
                   │  React + Vite    │  Frontend
-                  │  Tailwind CSS    │  (AWS Amplify)
+                  │  Tailwind CSS    │  (S3 static website)
                   │  Leaflet, Recharts
                   └────────┬─────────┘
                            ▼
@@ -100,7 +100,7 @@ credentials (`STORAGE_BACKEND=sqlite`), and switches to DynamoDB with one enviro
 
 | Service | What SafeWatch uses it for |
 | --- | --- |
-| AWS Amplify | Host the React frontend |
+| Amazon S3 | Static website hosting for the React frontend |
 | Amazon API Gateway | REST API, throttling, request routing |
 | AWS Lambda | Python backend functions |
 | Amazon DynamoDB | Incident, user and alert data (GSIs for hotspots/status) |

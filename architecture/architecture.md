@@ -131,7 +131,7 @@ frontend/src/
 
 | | Local | AWS |
 | --- | --- | --- |
-| Frontend | Vite dev server (5173) | Amplify |
+| Frontend | Vite dev server (5173) | S3 static website |
 | API | Flask (5001) via Vite proxy | API Gateway |
 | Compute | Flask process | Lambda (Python 3.12) |
 | Database | SQLite | DynamoDB |
