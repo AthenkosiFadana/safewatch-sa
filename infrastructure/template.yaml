@@ -1,0 +1,304 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  SafeWatch SA — community crime & safety monitoring platform.
+  Serverless API: API Gateway -> Lambda (Python) -> DynamoDB, with SNS alerts,
+  S3 evidence storage and CloudWatch monitoring.
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, prod]
+  AlertTopicEmail:
+    Type: String
+    Default: ''
+    Description: Optional email subscription for safety alert notifications (SNS)
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 15
+    MemorySize: 256
+    Architectures: [x86_64]
+    Environment:
+      Variables:
+        STORAGE_BACKEND: dynamodb
+        INCIDENTS_TABLE: !Ref IncidentsTable
+        USERS_TABLE: !Ref UsersTable
+        ALERTS_TABLE: !Ref AlertsTable
+        AWS_REGION_NAME: !Ref AWS::Region
+        SNS_TOPIC_ARN: !Ref AlertTopic
+        S3_BUCKET: !Ref EvidenceBucket
+        SECRET_KEY: !Ref JwtSecret
+    Policies:
+      - DynamoDBCrudPolicy:
+          TableName: !Ref IncidentsTable
+      - DynamoDBCrudPolicy:
+          TableName: !Ref UsersTable
+      - DynamoDBCrudPolicy:
+          TableName: !Ref AlertsTable
+      - SNSPublishMessagePolicy:
+          TopicName: !GetAtt AlertTopic.TopicName
+      - S3WritePolicy:
+          BucketName: !Ref EvidenceBucket
+
+Resources:
+  # ---------------------------------------------------------------- API ----
+  SafeWatchApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub safewatch-${EnvironmentName}-api
+      StageName: !Sub ${EnvironmentName}
+      TracingEnabled: true
+      MethodSettings:
+        - ResourcePath: '/*'
+          HttpMethod: '*'
+          ThrottlingBurstLimit: 50
+          ThrottlingRateLimit: 100
+
+  # -------------------------------------------------------------- Lambda ---
+  CreateIncidentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub safewatch-${EnvironmentName}-create-incident
+      Handler: lambda.create_incident.handler
+      CodeUri: ../backend/
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SafeWatchApi
+            Path: /incidents
+            Method: POST
+
+  GetIncidentsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub safewatch-${EnvironmentName}-get-incidents
+      Handler: lambda.get_incidents.handler
+      CodeUri: ../backend/
+      Events:
+        List:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SafeWatchApi
+            Path: /incidents
+            Method: GET
+        GetOne:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SafeWatchApi
+            Path: /incidents/{id}
+            Method: GET
+
+  UpdateIncidentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub safewatch-${EnvironmentName}-update-incident
+      Handler: lambda.update_incident.handler
+      CodeUri: ../backend/
+      Events:
+        Update:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SafeWatchApi
+            Path: /incidents/{id}
+            Method: PUT
+        Moderate:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SafeWatchApi
+            Path: /incidents/{id}/status
+            Method: PUT
+
+  DeleteIncidentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub safewatch-${EnvironmentName}-delete-incident
+      Handler: lambda.delete_incident.handler
+      CodeUri: ../backend/
+      Events:
+        Delete:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SafeWatchApi
+            Path: /incidents/{id}
+            Method: DELETE
+
+  CreateAlertFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub safewatch-${EnvironmentName}-create-alert
+      Handler: lambda.create_alert.handler
+      CodeUri: ../backend/
+      Events:
+        Check:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SafeWatchApi
+            Path: /alerts/check
+            Method: POST
+        Create:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SafeWatchApi
+            Path: /alerts
+            Method: POST
+
+  AnalyticsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub safewatch-${EnvironmentName}-analytics
+      Handler: lambda.analytics.handler
+      CodeUri: ../backend/
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SafeWatchApi
+            Path: /analytics
+            Method: GET
+
+  # Recurring cluster-alert evaluation every 15 minutes
+  AlertSchedule:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub safewatch-${EnvironmentName}-alert-schedule
+      Handler: lambda.create_alert.handler
+      CodeUri: ../backend/
+      Events:
+        Schedule:
+          Type: Schedule
+          Properties:
+            Schedule: rate(15 minutes)
+            Description: Detect incident clusters and publish safety alerts
+
+  # ------------------------------------------------------------- Data ------
+  IncidentsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub safewatch-${EnvironmentName}-incidents
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: incidentId
+          AttributeType: S
+        - AttributeName: area
+          AttributeType: S
+        - AttributeName: createdAt
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+      KeySchema:
+        - AttributeName: incidentId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: area-createdAt-index
+          KeySchema:
+            - AttributeName: area
+              KeyType: HASH
+            - AttributeName: createdAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: status-index
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: createdAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      SSESpecification:
+        SSEEnabled: true
+
+  UsersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub safewatch-${EnvironmentName}-users
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+      SSESpecification:
+        SSEEnabled: true
+
+  AlertsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub safewatch-${EnvironmentName}-alerts
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: alertId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: alertId
+          KeyType: HASH
+      SSESpecification:
+        SSEEnabled: true
+
+  # ------------------------------------------------------ Messaging ---------
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub safewatch-${EnvironmentName}-safety-alerts
+      DisplayName: SafeWatch SA Safety Alerts
+
+  AlertSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlertEmail
+    Properties:
+      TopicArn: !Ref AlertTopic
+      Protocol: email
+      Endpoint: !Ref AlertTopicEmail
+
+  # -------------------------------------------------------- Storage ---------
+  EvidenceBucket:
+    Type: S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-old-evidence
+            Status: Enabled
+            ExpirationInDays: 180
+
+  JwtSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub safewatch-${EnvironmentName}/jwt-secret
+      GenerateSecretString:
+        PasswordLength: 48
+        ExcludePunctuation: true
+
+  # ------------------------------------------------------ Monitoring ---------
+  ApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/apigateway/safewatch-${EnvironmentName}
+      RetentionInDays: 30
+
+Conditions:
+  HasAlertEmail: !Not [!Equals [!Ref AlertTopicEmail, '']]
+
+Outputs:
+  ApiUrl:
+    Description: SafeWatch REST API endpoint
+    Value: !Sub https://${SafeWatchApi}.execute-api.${AWS::Region}.amazonaws.com/${EnvironmentName}/
+  IncidentsTableName:
+    Value: !Ref IncidentsTable
+  AlertTopicArn:
+    Value: !Ref AlertTopic
+  EvidenceBucketName:
+    Value: !Ref EvidenceBucket
