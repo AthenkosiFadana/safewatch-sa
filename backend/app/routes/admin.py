@@ -24,7 +24,7 @@ def stats():
         "verifiedIncidents": len([i for i in incidents if i["status"] == "VERIFIED"]),
         "rejectedIncidents": len([i for i in incidents if i["status"] == "REJECTED"]),
         "duplicateFlagged": len([i for i in incidents if i.get("duplicateOf")]),
-        "activeAlerts": len([a for a in storage.get_db().list_alerts() if a["status"] == "ACTIVE"]),
+        "activeAlerts": len([a for a in storage.list_alerts() if a["status"] == "ACTIVE"]),
         "categoryBreakdown": [
             {"category": c, "count": n, "percent": round(n * 100 / total, 1)}
             for c, n in by_category.most_common()

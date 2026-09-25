@@ -30,10 +30,10 @@ def register():
         errors.append("name is required and must be under 80 characters")
     if errors:
         return jsonify({"errors": errors}), 400
-    if storage.get_db().get_user_by_email(payload["email"]):
+    if storage.get_user_by_email(payload["email"]):
         return jsonify({"errors": ["An account with this email already exists"]}), 409
 
-    user = storage.get_db().insert_user({
+    user = storage.insert_user({
         "userId": f"USR-{uuid.uuid4().hex[:10].upper()}",
         "email": payload["email"].strip().lower(),
         "name": name,
@@ -42,14 +42,14 @@ def register():
         "role": "MEMBER",
         "createdAt": storage.utcnow(),
     })
-    row = storage.get_db().get_user(user["userId"])
+    row = storage.get_user(user.get("userId") or user["user_id"])
     return jsonify({"user": _public_user(row)}), 201
 
 
 @auth_routes.post("/api/auth/login")
 def login():
     payload = request.get_json(silent=True) or {}
-    row = storage.get_db().get_user_by_email(str(payload.get("email", "")))
+    row = storage.get_user_by_email(str(payload.get("email", "")))
     if not row or not verify_password(str(payload.get("password", "")), row["password_hash"]):
         return jsonify({"error": "Invalid email or password"}), 401
 
@@ -65,7 +65,7 @@ def login():
 def me():
     from flask import current_app, g
 
-    row = storage.get_db().get_user(g.user_id)
+    row = storage.get_user(g.user_id)
     if not row:
         return jsonify({"error": "User not found"}), 404
     return jsonify({"user": _public_user(row)})
@@ -88,7 +88,7 @@ def update_profile():
             return jsonify({"errors": [error]}), 400
         updates["password_hash"] = hash_password(payload["password"])
 
-    row = storage.get_db().update_user(g.user_id, updates)
+    row = storage.update_user(g.user_id, updates)
     return jsonify({"user": _public_user(row)})
 
 

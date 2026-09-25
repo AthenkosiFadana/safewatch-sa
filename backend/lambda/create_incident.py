@@ -37,7 +37,7 @@ def handler(event, context):
     }
     storage.create_incident(incident)
     try:
-        storage.get_db().log_report(user["userId"])
+        storage.log_report(user["userId"])
     except Exception:  # pragma: no cover - rate log is best-effort in serverless mode
         pass
 

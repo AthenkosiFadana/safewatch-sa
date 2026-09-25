@@ -1,5 +1,12 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
+# LambdaRoleArn is intentionally allowed to be empty (empty -> the template
+# creates a role, non-empty -> an existing lab role is reused), which trips
+# cfn-lint's static ARN pattern check on the parameter default.
+Metadata:
+  cfn-lint:
+    config:
+      ignore_checks: [E3031]
 Description: >
   SafeWatch SA — community crime & safety monitoring platform.
   Serverless API: API Gateway -> Lambda (Python) -> DynamoDB, with SNS alerts,
@@ -14,10 +21,41 @@ Parameters:
     Type: String
     Default: ''
     Description: Optional email subscription for safety alert notifications (SNS)
+  JwtSecretValue:
+    Type: String
+    NoEcho: true
+    Default: ''
+    Description: >
+      JWT signing secret supplied at deploy time (generate with: openssl rand -hex 32).
+      A weak development fallback is used when left empty.
+  LambdaRoleArn:
+    Type: String
+    Default: ''
+    AllowedPattern: '^$|^arn:aws[a-zA-Z-]*:iam::[0-9]{12}:role/[a-zA-Z_0-9+=,.@\-_/]+$'
+    Description: >
+      Optional ARN of an existing execution role to use for all Lambda functions
+      (e.g. a pre-provisioned lab role). Leave empty to create a dedicated
+      least-privilege role — requires iam:CreateRole permission.
+  ApiMode:
+    Type: String
+    Default: apigateway
+    AllowedValues: [apigateway, functionurl]
+    Description: >
+      apigateway exposes the API through Amazon API Gateway (recommended).
+      functionurl exposes one Lambda Function URL running the full Flask app —
+      use in environments where API Gateway is not permitted.
+  EnableAlertSchedule:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: >
+      Create the EventBridge schedule that periodically detects incident
+      clusters. Disable in restricted accounts where events:DeleteRule is
+      denied, so the stack stays deletable.
 
 Globals:
   Function:
-    Runtime: python3.12
+    Runtime: python3.11
     Timeout: 15
     MemorySize: 256
     Architectures: [x86_64]
@@ -30,15 +68,17 @@ Globals:
         AWS_REGION_NAME: !Ref AWS::Region
         SNS_TOPIC_ARN: !Ref AlertTopic
         S3_BUCKET: !Ref EvidenceBucket
-        SECRET_KEY: !Sub '{{resolve:secretsmanager:safewatch-${EnvironmentName}/jwt-secret:SecretString}}'
-
-# Shared least-privilege execution role for every SafeWatch Lambda function.
-# The frontend never talks to DynamoDB directly — only these functions can.
+        SECRET_KEY: !If
+          - HasJwtSecretValue
+          - !Ref JwtSecretValue
+          - insecure-dev-secret-change-me
 
 Resources:
   # Shared least-privilege execution role for every SafeWatch Lambda function.
   # The frontend never talks to DynamoDB directly — only these functions can.
+  # Created only when no existing role ARN is supplied (LambdaRoleArn).
   SafeWatchFunctionRole:
+    Condition: CreateLambdaRole
     Type: AWS::IAM::Role
     Properties:
       RoleName: !Sub safewatch-${EnvironmentName}-lambda-role
@@ -88,6 +128,7 @@ Resources:
 
   # ---------------------------------------------------------------- API ----
   SafeWatchApi:
+    Condition: UseApiGateway
     Type: AWS::Serverless::Api
     Properties:
       Name: !Sub safewatch-${EnvironmentName}-api
@@ -101,10 +142,11 @@ Resources:
 
   # -------------------------------------------------------------- Lambda ---
   CreateIncidentFunction:
+    Condition: UseApiGateway
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub safewatch-${EnvironmentName}-create-incident
-      Role: !Ref SafeWatchFunctionRole
+      Role: !If [CreateLambdaRole, !GetAtt SafeWatchFunctionRole.Arn, !Ref LambdaRoleArn]
       Handler: lambda.create_incident.handler
       CodeUri: ../backend/
       Events:
@@ -116,10 +158,11 @@ Resources:
             Method: POST
 
   GetIncidentsFunction:
+    Condition: UseApiGateway
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub safewatch-${EnvironmentName}-get-incidents
-      Role: !Ref SafeWatchFunctionRole
+      Role: !If [CreateLambdaRole, !GetAtt SafeWatchFunctionRole.Arn, !Ref LambdaRoleArn]
       Handler: lambda.get_incidents.handler
       CodeUri: ../backend/
       Events:
@@ -137,10 +180,11 @@ Resources:
             Method: GET
 
   UpdateIncidentFunction:
+    Condition: UseApiGateway
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub safewatch-${EnvironmentName}-update-incident
-      Role: !Ref SafeWatchFunctionRole
+      Role: !If [CreateLambdaRole, !GetAtt SafeWatchFunctionRole.Arn, !Ref LambdaRoleArn]
       Handler: lambda.update_incident.handler
       CodeUri: ../backend/
       Events:
@@ -158,10 +202,11 @@ Resources:
             Method: PUT
 
   DeleteIncidentFunction:
+    Condition: UseApiGateway
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub safewatch-${EnvironmentName}-delete-incident
-      Role: !Ref SafeWatchFunctionRole
+      Role: !If [CreateLambdaRole, !GetAtt SafeWatchFunctionRole.Arn, !Ref LambdaRoleArn]
       Handler: lambda.delete_incident.handler
       CodeUri: ../backend/
       Events:
@@ -173,10 +218,11 @@ Resources:
             Method: DELETE
 
   CreateAlertFunction:
+    Condition: UseApiGateway
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub safewatch-${EnvironmentName}-create-alert
-      Role: !Ref SafeWatchFunctionRole
+      Role: !If [CreateLambdaRole, !GetAtt SafeWatchFunctionRole.Arn, !Ref LambdaRoleArn]
       Handler: lambda.create_alert.handler
       CodeUri: ../backend/
       Events:
@@ -194,10 +240,11 @@ Resources:
             Method: POST
 
   AnalyticsFunction:
+    Condition: UseApiGateway
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub safewatch-${EnvironmentName}-analytics
-      Role: !Ref SafeWatchFunctionRole
+      Role: !If [CreateLambdaRole, !GetAtt SafeWatchFunctionRole.Arn, !Ref LambdaRoleArn]
       Handler: lambda.analytics.handler
       CodeUri: ../backend/
       Events:
@@ -210,10 +257,11 @@ Resources:
 
   # Recurring cluster-alert evaluation every 15 minutes
   AlertSchedule:
+    Condition: ScheduleEnabled
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub safewatch-${EnvironmentName}-alert-schedule
-      Role: !Ref SafeWatchFunctionRole
+      Role: !If [CreateLambdaRole, !GetAtt SafeWatchFunctionRole.Arn, !Ref LambdaRoleArn]
       Handler: lambda.create_alert.handler
       CodeUri: ../backend/
       Events:
@@ -222,6 +270,30 @@ Resources:
           Properties:
             Schedule: rate(15 minutes)
             Description: Detect incident clusters and publish safety alerts
+
+  # Single Lambda running the full Flask app behind a Function URL.
+  # Used when ApiMode=functionurl (restricted environments without API Gateway).
+  ApiRouterFunction:
+    Condition: UseFunctionUrl
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub safewatch-${EnvironmentName}-api-router
+      Role: !If [CreateLambdaRole, !GetAtt SafeWatchFunctionRole.Arn, !Ref LambdaRoleArn]
+      Handler: lambda.wsgi.handler
+      CodeUri: ../backend/
+      MemorySize: 512
+      Timeout: 29
+
+  ApiRouterUrl:
+    Condition: UseFunctionUrl
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !GetAtt ApiRouterFunction.Arn
+      AuthType: NONE
+      Cors:
+        AllowOrigins: ['*']
+        AllowMethods: ['*']
+        AllowHeaders: ['*']
 
   # ------------------------------------------------------------- Data ------
   IncidentsTable:
@@ -267,11 +339,20 @@ Resources:
       TableName: !Sub safewatch-${EnvironmentName}-users
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
-        - AttributeName: userId
+        - AttributeName: user_id
+          AttributeType: S
+        - AttributeName: email
           AttributeType: S
       KeySchema:
-        - AttributeName: userId
+        - AttributeName: user_id
           KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: email-index
+          KeySchema:
+            - AttributeName: email
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
       SSESpecification:
         SSEEnabled: true
 
@@ -281,10 +362,10 @@ Resources:
       TableName: !Sub safewatch-${EnvironmentName}-alerts
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
-        - AttributeName: alertId
+        - AttributeName: alert_id
           AttributeType: S
       KeySchema:
-        - AttributeName: alertId
+        - AttributeName: alert_id
           KeyType: HASH
       SSESpecification:
         SSEEnabled: true
@@ -323,14 +404,6 @@ Resources:
             Status: Enabled
             ExpirationInDays: 180
 
-  JwtSecret:
-    Type: AWS::SecretsManager::Secret
-    Properties:
-      Name: !Sub safewatch-${EnvironmentName}/jwt-secret
-      GenerateSecretString:
-        PasswordLength: 48
-        ExcludePunctuation: true
-
   # ------------------------------------------------------ Monitoring ---------
   ApiLogGroup:
     Type: AWS::Logs::LogGroup
@@ -339,12 +412,22 @@ Resources:
       RetentionInDays: 30
 
 Conditions:
+  CreateLambdaRole: !Equals [!Ref LambdaRoleArn, '']
+  UseApiGateway: !Equals [!Ref ApiMode, 'apigateway']
+  UseFunctionUrl: !Equals [!Ref ApiMode, 'functionurl']
+  ScheduleEnabled: !Equals [!Ref EnableAlertSchedule, 'true']
+  HasJwtSecretValue: !Not [!Equals [!Ref JwtSecretValue, '']]
   HasAlertEmail: !Not [!Equals [!Ref AlertTopicEmail, '']]
 
 Outputs:
   ApiUrl:
-    Description: SafeWatch REST API endpoint
+    Condition: UseApiGateway
+    Description: SafeWatch REST API endpoint (API Gateway stage)
     Value: !Sub https://${SafeWatchApi}.execute-api.${AWS::Region}.amazonaws.com/${EnvironmentName}/
+  FunctionApiUrl:
+    Condition: UseFunctionUrl
+    Description: SafeWatch REST API endpoint (Lambda Function URL)
+    Value: !GetAtt ApiRouterUrl.FunctionUrl
   IncidentsTableName:
     Value: !Ref IncidentsTable
   AlertTopicArn:

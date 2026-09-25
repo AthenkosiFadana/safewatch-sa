@@ -64,7 +64,7 @@ def create_incident():
         "updatedAt": now,
     }
     storage.create_incident(incident)
-    storage.get_db().log_report(g.user_id)
+    storage.log_report(g.user_id)
 
     duplicates = moderation.find_duplicates(incident)
     moderation.mark_duplicates(incident, duplicates)

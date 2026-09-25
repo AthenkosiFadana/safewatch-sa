@@ -9,7 +9,7 @@ alert_routes = Blueprint("alert_routes", __name__)
 @alert_routes.get("/api/alerts")
 def list_alerts():
     area = request.args.get("area")
-    return jsonify({"alerts": storage.get_db().list_alerts(area)})
+    return jsonify({"alerts": storage.list_alerts(area)})
 
 
 @alert_routes.post("/api/alerts/check")
@@ -41,7 +41,7 @@ def create_alert():
         "status": "ACTIVE",
         "createdAt": storage.utcnow(),
     }
-    storage.get_db().insert_alert(alert)
+    storage.insert_alert(alert)
     from services.notifications import publish_alert
 
     publish_alert(alert)

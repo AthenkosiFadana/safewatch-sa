@@ -20,8 +20,8 @@ def _parse(iso: str) -> datetime:
 def rate_limited(user_id: str) -> bool:
     since = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat().replace("+00:00", "Z")
     try:
-        return storage.get_db().report_count_since(user_id, since) >= Config.RATE_LIMIT_PER_HOUR
-    except Exception:  # pragma: no cover - rate log is best-effort in serverless mode
+        return storage.reports_since(user_id, since) >= Config.RATE_LIMIT_PER_HOUR
+    except Exception:  # pragma: no cover - rate check is best-effort in serverless mode
         return False
 
 
@@ -83,7 +83,7 @@ def _cluster_alerts(incidents: list[dict]) -> list[dict]:
 def evaluate_alerts() -> list[dict]:
     """Create (and publish) an alert for any area with 3+ recent incidents."""
     recent = storage.list_incidents({"since": (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat().replace("+00:00", "Z")})
-    existing = {(a["area"], a["createdAt"][:13]) for a in storage.get_db().list_alerts()}
+    existing = {(a["area"], a["createdAt"][:13]) for a in storage.list_alerts()}
     created = []
     from services.notifications import publish_alert
 
@@ -100,7 +100,7 @@ def evaluate_alerts() -> list[dict]:
             "status": "ACTIVE",
             "createdAt": storage.utcnow(),
         }
-        storage.get_db().insert_alert(record)
+        storage.insert_alert(record)
         publish_alert(record)
         created.append(record)
     return created

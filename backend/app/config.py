@@ -13,9 +13,10 @@ class Config:
 
     # Storage backend: "sqlite" (local development) or "dynamodb" (AWS)
     STORAGE_BACKEND = os.getenv("STORAGE_BACKEND", "sqlite")
-    DYNAMODB_TABLE = os.getenv("DYNAMODB_TABLE", "SafeWatchIncidents")
+    DYNAMODB_TABLE = os.getenv("INCIDENTS_TABLE", os.getenv("DYNAMODB_TABLE", "SafeWatchIncidents"))
     USERS_TABLE = os.getenv("USERS_TABLE", "SafeWatchUsers")
-    AWS_REGION = os.getenv("AWS_REGION", "eu-west-1")
+    ALERTS_TABLE = os.getenv("ALERTS_TABLE", "SafeWatchAlerts")
+    AWS_REGION = os.getenv("AWS_REGION", os.getenv("AWS_REGION_NAME", "eu-west-1"))
 
     # Image/evidence bucket (Amazon S3)
     S3_BUCKET = os.getenv("S3_BUCKET", "")

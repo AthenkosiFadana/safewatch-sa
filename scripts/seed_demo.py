@@ -59,18 +59,19 @@ SEVERITY_WEIGHTS = [35, 40, 18, 7]
 def seed(clear: bool = False, incidents: int = 180):
     app = create_app()
     with app.app_context():
-        db = storage.get_db()
-
         if clear:
-            with db.connect() as conn:
-                conn.execute("DELETE FROM incidents")
-                conn.execute("DELETE FROM users")
-                conn.execute("DELETE FROM alerts")
-                conn.execute("DELETE FROM report_log")
-            print("cleared existing data")
+            if storage.use_dynamodb():
+                print("--clear is only supported for the local sqlite backend")
+            else:
+                with storage.get_db().connect() as conn:
+                    conn.execute("DELETE FROM incidents")
+                    conn.execute("DELETE FROM users")
+                    conn.execute("DELETE FROM alerts")
+                    conn.execute("DELETE FROM report_log")
+                print("cleared existing data")
 
-        if not db.get_user_by_email("admin@safewatch.co.za"):
-            db.insert_user({
+        if not storage.get_user_by_email("admin@safewatch.co.za"):
+            storage.insert_user({
                 "userId": "USR-ADMIN0001",
                 "email": "admin@safewatch.co.za",
                 "name": "SafeWatch Admin",
@@ -81,8 +82,8 @@ def seed(clear: bool = False, incidents: int = 180):
             })
             print("admin@safewatch.co.za / Admin123!")
 
-        if not db.get_user_by_email("demo@safewatch.co.za"):
-            db.insert_user({
+        if not storage.get_user_by_email("demo@safewatch.co.za"):
+            storage.insert_user({
                 "userId": "USR-DEMO0001",
                 "email": "demo@safewatch.co.za",
                 "name": "Demo Resident",
@@ -121,7 +122,7 @@ def seed(clear: bool = False, incidents: int = 180):
                 "createdAt": created_at.isoformat().replace("+00:00", "Z"),
                 "updatedAt": created_at.isoformat().replace("+00:00", "Z"),
             }
-            db.insert_incident(incident)
+            storage.create_incident(incident)
             created += 1
 
         print(f"seeded {created} demo incidents (source=DEMO)")

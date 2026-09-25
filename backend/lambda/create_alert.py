@@ -36,7 +36,7 @@ def handler(event, context):
             "status": "ACTIVE",
             "createdAt": storage.utcnow(),
         }
-        storage.get_db().insert_alert(alert)
+        storage.insert_alert(alert)
         publish_alert(alert)
         return response(201, {"alert": alert})
 
