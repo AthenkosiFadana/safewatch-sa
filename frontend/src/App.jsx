@@ -2,7 +2,11 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import Navbar from './components/Navbar'
 import Footer from './components/Footer'
+import ProtectedRoute from './components/ProtectedRoute'
 import Home from './pages/Home'
+import Login from './pages/Login'
+import Register from './pages/Register'
+import Profile from './pages/Profile'
 
 export default function App() {
   return (
@@ -13,6 +17,9 @@ export default function App() {
           <main className="flex-1">
             <Routes>
               <Route path="/" element={<Home />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/register" element={<Register />} />
+              <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
               <Route
                 path="*"
                 element={
