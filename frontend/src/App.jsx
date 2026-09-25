@@ -7,6 +7,9 @@ import Home from './pages/Home'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import Profile from './pages/Profile'
+import Dashboard from './pages/Dashboard'
+import ReportIncident from './pages/ReportIncident'
+import IncidentDetail from './pages/IncidentDetail'
 
 export default function App() {
   return (
@@ -20,11 +23,14 @@ export default function App() {
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
               <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+              <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+              <Route path="/report" element={<ProtectedRoute><ReportIncident /></ProtectedRoute>} />
+              <Route path="/incidents/:id" element={<IncidentDetail />} />
               <Route
                 path="*"
                 element={
                   <div className="py-24 text-center text-slate-500">
-                    Page under construction — <a className="font-semibold text-red-600 underline" href="/">go home</a>
+                    Page not found — <a className="font-semibold text-red-600 underline" href="/">go home</a>
                   </div>
                 }
               />
