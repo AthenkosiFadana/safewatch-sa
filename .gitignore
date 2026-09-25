@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# Build output
+frontend/dist/
+frontend/.vite/
+.aws-sam/
+samconfig.toml.bak
+
+# Databases & local data
+*.db
+*.sqlite3
+backend/safewatch.db
+
+# Secrets & environment
+.env
+.env.*
+!.env.example
+*.pem
+aws-credentials
+
+# Tooling / caches
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+dev.log
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
