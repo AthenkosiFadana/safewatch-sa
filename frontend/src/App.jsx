@@ -50,7 +50,7 @@ export default function App() {
                 path="*"
                 element={
                   <div className="py-24 text-center text-slate-500">
-                    Page not found — <a className="font-semibold text-red-600 underline" href="/">go home</a>
+                    Page not found â€” <a className="font-semibold text-red-600 underline" href="/">go home</a>
                   </div>
                 }
               />
