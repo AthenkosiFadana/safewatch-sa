@@ -30,20 +30,62 @@ Globals:
         AWS_REGION_NAME: !Ref AWS::Region
         SNS_TOPIC_ARN: !Ref AlertTopic
         S3_BUCKET: !Ref EvidenceBucket
-        SECRET_KEY: !Ref JwtSecret
-    Policies:
-      - DynamoDBCrudPolicy:
-          TableName: !Ref IncidentsTable
-      - DynamoDBCrudPolicy:
-          TableName: !Ref UsersTable
-      - DynamoDBCrudPolicy:
-          TableName: !Ref AlertsTable
-      - SNSPublishMessagePolicy:
-          TopicName: !GetAtt AlertTopic.TopicName
-      - S3WritePolicy:
-          BucketName: !Ref EvidenceBucket
+        SECRET_KEY: !Sub '{{resolve:secretsmanager:safewatch-${EnvironmentName}/jwt-secret:SecretString}}'
+
+# Shared least-privilege execution role for every SafeWatch Lambda function.
+# The frontend never talks to DynamoDB directly — only these functions can.
 
 Resources:
+  # Shared least-privilege execution role for every SafeWatch Lambda function.
+  # The frontend never talks to DynamoDB directly — only these functions can.
+  SafeWatchFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub safewatch-${EnvironmentName}-lambda-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess
+      Policies:
+        - PolicyName: SafeWatchDataAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: DynamoDBReadWrite
+                Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                  - dynamodb:BatchWriteItem
+                  - dynamodb:BatchGetItem
+                  - dynamodb:DescribeTable
+                Resource:
+                  - !GetAtt IncidentsTable.Arn
+                  - !Sub '${IncidentsTable.Arn}/index/*'
+                  - !GetAtt UsersTable.Arn
+                  - !GetAtt AlertsTable.Arn
+              - Sid: PublishSafetyAlerts
+                Effect: Allow
+                Action: sns:Publish
+                Resource: !Ref AlertTopic
+              - Sid: EvidenceUploads
+                Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:DeleteObject
+                Resource: !Sub '${EvidenceBucket.Arn}/incidents/*'
+
   # ---------------------------------------------------------------- API ----
   SafeWatchApi:
     Type: AWS::Serverless::Api
@@ -62,6 +104,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub safewatch-${EnvironmentName}-create-incident
+      Role: !Ref SafeWatchFunctionRole
       Handler: lambda.create_incident.handler
       CodeUri: ../backend/
       Events:
@@ -76,6 +119,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub safewatch-${EnvironmentName}-get-incidents
+      Role: !Ref SafeWatchFunctionRole
       Handler: lambda.get_incidents.handler
       CodeUri: ../backend/
       Events:
@@ -96,6 +140,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub safewatch-${EnvironmentName}-update-incident
+      Role: !Ref SafeWatchFunctionRole
       Handler: lambda.update_incident.handler
       CodeUri: ../backend/
       Events:
@@ -116,6 +161,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub safewatch-${EnvironmentName}-delete-incident
+      Role: !Ref SafeWatchFunctionRole
       Handler: lambda.delete_incident.handler
       CodeUri: ../backend/
       Events:
@@ -130,6 +176,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub safewatch-${EnvironmentName}-create-alert
+      Role: !Ref SafeWatchFunctionRole
       Handler: lambda.create_alert.handler
       CodeUri: ../backend/
       Events:
@@ -150,6 +197,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub safewatch-${EnvironmentName}-analytics
+      Role: !Ref SafeWatchFunctionRole
       Handler: lambda.analytics.handler
       CodeUri: ../backend/
       Events:
@@ -165,6 +213,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub safewatch-${EnvironmentName}-alert-schedule
+      Role: !Ref SafeWatchFunctionRole
       Handler: lambda.create_alert.handler
       CodeUri: ../backend/
       Events:
